@@ -4,13 +4,25 @@ const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const ejs = require("ejs");
 const _ = require("lodash");
-const md5 = require('md5');
+const session = require('express-session')
+const passport = require('passport');
+const passportLocalMongoose = require('passport-local-mongoose')
 require('dotenv').config()
 
 const app = express();
 app.set('view engine', 'ejs');
 app.use(bodyParser.urlencoded({extended: true}));
 app.use(express.static("public"));
+
+app.use(session({
+  secret: 'keyboard cat',
+  resave: false,
+  saveUninitialized: true,
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
 mongoose.connect(process.env.DB_PASSWORD);
 
 
@@ -19,9 +31,14 @@ const userSchema = new mongoose.Schema({
   password: String
 });
 
+userSchema.plugin(passportLocalMongoose);
+
 const User = mongoose.model('User', userSchema);
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
-
+////////////////////////////////////////////////////////////
 app.get('/', function(req, res){
   res.render('home');
 })
@@ -33,52 +50,59 @@ app.get('/login', function(req, res){
 })
 
 app.post('/login', function(req, res){
-  User.findOne({email: req.body.username}, function(err, foundUser){
+  const user = new User({
+    username: req.body.username,
+    password: req.body.password
+  });
+
+  req.login(user, function(err){
     if(err){
-      res.send('teste');
-    }else{
-      if(foundUser.password === md5(req.body.password)){
-        res.render('secrets');
-      } else{
-        res.send('Usuário não encontrado')
-      }
+      res.send('Erro')
+    } else{
+      passport.authenticate('local')(req, res, function(){
+        res.redirect('/secrets')
+      })
     }
   })
-})
+
+});
 
 ///////////////////////////////////////////////////////////////
 app.get('/register', function(req, res){
   res.render('register');
-})
+});
 
 app.post('/register', function(req, res){
-  const user = new User({
-    email: req.body.username,
-    password: md5(req.body.password)
-  })
-  user.save(function(err){
+  User.register({username: req.body.username}, req.body.password, function(err, user){
     if(err){
-      res.send('Ocorreu um erro. Tente novamente')
+      res.send('erro')
     } else{
-      res.redirect('/')
+      passport.authenticate('local')(req, res, function(){
+        res.redirect('/secrets')
+      })
     }
   })
-})
+});
 
 ///////////////////////////////////////////////////////////////
 app.get('/secrets', function(req, res){
-  res.render('secrets');
-})
+  if(req.isAuthenticated()){
+    res.render('secrets');
+  }else{
+    res.redirect('/login')
+  }
+});
 
 ///////////////////////////////////////////////////////////////
 app.get('/submit', function(req, res){
   res.render('submit');
-})
+});
 
 ///////////////////////////////////////////////////////////////
-
-
-
+app.get('/logout', function(req, res){
+  req.logout();
+  res.redirect('/');
+})
 
 
 
