@@ -13,7 +13,8 @@ require('dotenv').config()
 
 const app = express();
 app.set('view engine', 'ejs');
-app.use(bodyParser.urlencoded({extended: true}));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
 app.use(session({
@@ -31,7 +32,8 @@ mongoose.connect(process.env.DB_PASSWORD);
 const userSchema = new mongoose.Schema({
   email: String,
   password: String,
-  googleId: String 
+  googleId: String,
+  secret: Array
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -56,8 +58,7 @@ passport.use(new GoogleStrategy({
     callbackURL: "http://localhost:3000/auth/google/secrets"
   },
   function(accessToken, refreshToken, profile, cb) {
-    console.log(profile)
-    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+    User.findOrCreate({ googleId: profile.id, username: profile.displayName}, function (err, user) {
       return cb(err, user);
     });
   }
@@ -98,7 +99,7 @@ app.post('/login', function(req, res){
     if(err){
       res.send('Erro')
     } else{
-      passport.authenticate('local')(req, res, function(){
+      passport.authenticate('local', {session: true})(req, res, function(){
         res.redirect('/secrets')
       })
     }
@@ -116,7 +117,7 @@ app.post('/register', function(req, res){
     if(err){
       res.send('erro')
     } else{
-      passport.authenticate('local')(req, res, function(){
+      passport.authenticate('local', {session: true})(req, res, function(){
         res.redirect('/secrets')
       })
     }
@@ -125,23 +126,46 @@ app.post('/register', function(req, res){
 
 ///////////////////////////////////////////////////////////////
 app.get('/secrets', function(req, res){
+  User.find({'secret:': {$ne: null}}, function(err, foundUser){
+    if(err){
+      res.send('Ocorreu um erro. (0002)')
+    }else{
+      res.render('secrets', {usersWithSecrets: foundUser})
+    }
+  })
+});
+
+///////////////////////////////////////////////////////////////
+app.get('/submit', function(req, res){
   if(req.isAuthenticated()){
-    res.render('secrets');
+    res.render('submit');
   }else{
     res.redirect('/login')
   }
 });
 
-///////////////////////////////////////////////////////////////
-app.get('/submit', function(req, res){
-  res.render('submit');
+app.post('/submit', function(req, res){
+  console.log(req.user.id)
+  User.findById(req.user.id, function(err, foundUser){
+    if(err){
+      res.send('Ocorreu um erro (0001)');
+    } else{
+      if(foundUser){
+        console.log(foundUser)
+        foundUser.secret.push(req.body.secret)
+        foundUser.save(function(){
+          res.redirect('/secrets')
+        });
+      }
+    };
+  });
 });
 
 ///////////////////////////////////////////////////////////////
 app.get('/logout', function(req, res){
   req.logout();
   res.redirect('/');
-})
+});
 
 
 
